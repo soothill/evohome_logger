@@ -1,0 +1,4 @@
+# Runtime dependencies for the evohome→Influx collector
+influxdb-client==1.43.0
+evohomeclient==0.3.4
+requests==2.31.0

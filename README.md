@@ -39,6 +39,7 @@ Provide these environment variables:
 Use `config.env.example` as a template. `make config` copies it to `config.env` (ignored by git) so secrets stay local.
 
 ## Podman workflows (MicroOS-friendly)
+0) Help/usage: run `make` with no args to see available targets.  
 1) Prepare config: `make config` then edit `config.env` with your credentials and endpoints.  
 2) Build image: `make build` (podman build).  
 3) Run once (good for cron/timers): `make run-once` (uses `config.env`, mounts `/var/lib/evohome-logger` to `/data`).  

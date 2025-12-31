@@ -5,7 +5,20 @@ CONFIG_FILE ?= config.env
 DATA_DIR ?= /var/lib/evohome-logger
 CONTAINER_NAME ?= evohome-logger
 
-.PHONY: build config run-once run-detached logs stop rm test-connect
+.DEFAULT_GOAL := help
+
+.PHONY: help build config run-once run-detached logs stop rm test-connect
+
+help:
+	@echo "Evohome logger (Podman) targets:"
+	@echo "  make build         - Build the container image ($(IMAGE):$(TAG))"
+	@echo "  make config        - Copy config.env.example to config.env if missing"
+	@echo "  make run-once      - Run container once with config/env + data volume"
+	@echo "  make run-detached  - Run container detached with name $(CONTAINER_NAME)"
+	@echo "  make logs          - Follow logs for $(CONTAINER_NAME)"
+	@echo "  make stop          - Stop detached container (if running)"
+	@echo "  make rm            - Remove stopped container"
+	@echo "  make test-connect  - Connectivity check only (Evohome + InfluxDB, no writes)"
 
 build:
 	$(PODMAN) build -t $(IMAGE):$(TAG) .

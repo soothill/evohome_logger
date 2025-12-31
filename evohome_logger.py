@@ -469,10 +469,10 @@ def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging
     elif isinstance(installation_data, dict):
         installation = installation_data
     else:
-        logger.error("Unexpected installation payload type: %s", type(installation_data))
+        logger.warning("Unexpected installation payload type: %s", type(installation_data))
 
     if not installation:
-        logger.error("Failed to fetch installation details")
+        logger.warning("Proceeding without installation details; some tags may be missing")
 
     return temperatures, installation if installation else {}
 

@@ -41,17 +41,14 @@ config:
 
 run-once: build
 	mkdir -p $(HOST_DATA_DIR)
-	-chmod 0777 $(HOST_DATA_DIR)
 	$(PODMAN) run $(PODMAN_RUN_FLAGS) --user $(PODMAN_USER) --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG)
 
 run-detached: build
 	mkdir -p $(HOST_DATA_DIR)
-	-chmod 0777 $(HOST_DATA_DIR)
 	$(PODMAN) run $(PODMAN_RUN_FLAGS) --user $(PODMAN_USER) --replace -d --name $(CONTAINER_NAME) --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG)
 
 test-connect: build
 	mkdir -p $(HOST_DATA_DIR)
-	-chmod 0777 $(HOST_DATA_DIR)
 	$(PODMAN) run $(PODMAN_RUN_FLAGS) --user $(PODMAN_USER) --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG) --check
 
 logs:

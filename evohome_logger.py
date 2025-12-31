@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import logging
 import logging.handlers
 import os
 import socket
 import sys
-import argparse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+from evohomeclient import EvohomeClient
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
-from evohomeclient import EvohomeClient
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 IP_CACHE_FILE = DATA_DIR / "influx_ip_cache.json"
@@ -63,6 +63,15 @@ def atomic_write_json(path: Path, payload: Dict) -> None:
     tmp_path.replace(path)
 
 
+def try_write_json(path: Path, payload: Dict, logger: logging.Logger) -> bool:
+    try:
+        atomic_write_json(path, payload)
+        return True
+    except OSError as exc:  # noqa: BLE001
+        logger.warning("Failed to persist %s: %s", path, exc)
+        return False
+
+
 def load_json(path: Path) -> Optional[Dict]:
     try:
         with path.open("r", encoding="utf-8") as handle:
@@ -84,7 +93,7 @@ def resolve_influx_ip(hostname: str, logger: logging.Logger) -> Tuple[Optional[s
     try:
         ip = socket.getaddrinfo(hostname, None)[0][4][0]
         if ip != cached_ip:
-            atomic_write_json(IP_CACHE_FILE, {"host": hostname, "ip": ip})
+            try_write_json(IP_CACHE_FILE, {"host": hostname, "ip": ip}, logger)
         return ip, False
     except socket.gaierror as exc:
         logger.error("DNS lookup failed for %s: %s", hostname, exc)
@@ -288,8 +297,8 @@ def load_offline_records() -> List[str]:
 def persist_offline_records(records: List[str], logger: logging.Logger) -> None:
     if not records:
         return
-    atomic_write_json(OFFLINE_BUFFER_FILE, {"records": records})
-    logger.warning("Cached %d records locally (offline buffer)", len(records))
+    if try_write_json(OFFLINE_BUFFER_FILE, {"records": records}, logger):
+        logger.warning("Cached %d records locally (offline buffer)", len(records))
 
 
 def write_points(records: List[Point], influx: InfluxDBClient, bucket: str, org: str, logger: logging.Logger) -> bool:
@@ -323,12 +332,45 @@ def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging
         logger.error("Failed to fetch temperatures: %s", exc)
         temperatures = []
 
-    try:
-        installations = client.full_installation()
-        installation = installations[location_idx] if isinstance(installations, list) and installations else installations
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to fetch installation details: %s", exc)
-        installation = {}
+    def fetch_installation() -> Dict:
+        try:
+            full_inst = getattr(client, "full_installation", None)
+            if callable(full_inst):
+                return full_inst()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("full_installation failed: %s", exc)
+        try:
+            inst_call = getattr(client, "installation_info", None)
+            if callable(inst_call):
+                return inst_call()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("installation_info failed: %s", exc)
+        try:
+            inst_call = getattr(client, "installation", None)
+            if callable(inst_call):
+                return inst_call()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("callable installation failed: %s", exc)
+        try:
+            return getattr(client, "installation", {})
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("attribute installation failed: %s", exc)
+        return {}
+
+    installation_data = fetch_installation()
+    installation = {}
+    if isinstance(installation_data, list) and installation_data:
+        try:
+            installation = installation_data[location_idx]
+        except (IndexError, TypeError):
+            installation = installation_data[0]
+    elif isinstance(installation_data, dict):
+        installation = installation_data
+    else:
+        logger.error("Unexpected installation payload type: %s", type(installation_data))
+
+    if not installation:
+        logger.error("Failed to fetch installation details")
 
     return temperatures, installation if installation else {}
 

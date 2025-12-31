@@ -117,6 +117,18 @@ def normalize_expiry(value) -> Optional[float]:
     return None
 
 
+def json_safe(value):
+    if isinstance(value, datetime):
+        return value.timestamp()
+    if isinstance(value, dict):
+        return {k: json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [json_safe(v) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
 def persist_token_cache(client: "EvohomeClient", logger: logging.Logger) -> None:
     token_payload: Dict = {}
     candidates = [
@@ -148,6 +160,7 @@ def persist_token_cache(client: "EvohomeClient", logger: logging.Logger) -> None
     if not token_payload:
         return
 
+    token_payload = json_safe(token_payload)
     try_write_json(TOKEN_CACHE_FILE, token_payload, logger)
 
 

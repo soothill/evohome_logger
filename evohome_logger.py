@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 from evohomeclient import EvohomeClient
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
+import requests
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 IP_CACHE_FILE = DATA_DIR / "influx_ip_cache.json"
@@ -144,6 +145,17 @@ def persist_token_cache(client: "EvohomeClient", logger: logging.Logger) -> None
         return
 
     try_write_json(TOKEN_CACHE_FILE, token_payload, logger)
+
+
+def is_rate_limit_error(exc: Exception) -> bool:
+    if isinstance(exc, requests.HTTPError):
+        try:
+            if getattr(exc.response, "status_code", None) == 429:
+                return True
+        except Exception:
+            pass
+    text = str(exc).lower()
+    return "429" in text or "too many requests" in text or "rate" in text and "limit" in text
 
 
 def load_json(path: Path) -> Optional[Dict]:
@@ -432,11 +444,16 @@ def write_points(records: List[Point], influx: InfluxDBClient, bucket: str, org:
         return False
 
 
-def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging.Logger) -> Tuple[List[Dict], Dict, bool]:
+def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging.Logger) -> Tuple[List[Dict], Dict, bool, bool]:
     try:
         temperatures = client.temperatures(force_refresh=True)
+        rate_limited = False
     except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to fetch temperatures: %s", exc)
+        rate_limited = is_rate_limit_error(exc)
+        if rate_limited:
+            logger.warning("Evohome API rate limited while fetching temperatures (429); skipping this run")
+        else:
+            logger.error("Failed to fetch temperatures: %s", exc)
         temperatures = []
 
     def log_installation_debug(payload) -> None:
@@ -456,8 +473,9 @@ def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging
         except Exception as exc:  # noqa: BLE001
             logger.debug("Unable to log installation payload details: %s", exc)
 
-    def fetch_installation() -> Tuple[Dict, bool]:
+    def fetch_installation() -> Tuple[Dict, bool, bool]:
         attempted = False
+        rate_limited_local = False
         candidates = [
             ("full_installation", True),
             ("installation_info", True),
@@ -475,12 +493,16 @@ def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging
                 log_installation_debug(payload)
                 if payload:
                     logger.debug("Using installation payload from %s", name)
-                    return payload, attempted
+                    return payload, attempted, rate_limited_local
             except Exception as exc:  # noqa: BLE001
-                logger.debug("%s failed: %s", name, exc)
-        return {}, attempted
+                if is_rate_limit_error(exc):
+                    rate_limited_local = True
+                    logger.warning("Evohome API rate limited while fetching installation via %s; skipping installation tags", name)
+                else:
+                    logger.debug("%s failed: %s", name, exc)
+        return {}, attempted, rate_limited_local
 
-    installation_data, attempted_install = fetch_installation()
+    installation_data, attempted_install, install_rate_limited = fetch_installation()
     installation = {}
     if isinstance(installation_data, list) and installation_data:
         try:
@@ -493,12 +515,14 @@ def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging
         logger.warning("Unexpected installation payload type: %s", type(installation_data))
 
     if not installation:
-        if attempted_install:
+        if install_rate_limited:
+            logger.warning("Rate limited when fetching installation details; proceeding without installation tags")
+        elif attempted_install:
             logger.warning("Proceeding without installation details; some tags may be missing")
         else:
             logger.info("Evohome client does not expose installation metadata; continuing without those tags")
 
-    return temperatures, installation if installation else {}, attempted_install
+    return temperatures, installation if installation else {}, attempted_install, (rate_limited or install_rate_limited)
 
 
 def check_connectivity(config: Dict, logger: logging.Logger) -> bool:
@@ -512,7 +536,10 @@ def check_connectivity(config: Dict, logger: logging.Logger) -> bool:
         evo_ok = True
         logger.info("Evohome connectivity: OK")
     except Exception as exc:  # noqa: BLE001
-        logger.error("Evohome connectivity failed: %s", exc)
+        if is_rate_limit_error(exc):
+            logger.warning("Evohome connectivity check rate-limited (429)")
+        else:
+            logger.error("Evohome connectivity failed: %s", exc)
 
     parsed_influx = urlparse(config["influx_url"])
     resolved_ip, from_cache = resolve_influx_ip(parsed_influx.hostname or "", logger)
@@ -564,7 +591,9 @@ def main() -> None:
     except Exception:
         sys.exit(1)
 
-    temperatures, installation, _attempted_install = fetch_evohome_data(evo_client, config["location_idx"], logger)
+    temperatures, installation, _attempted_install, rate_limited = fetch_evohome_data(
+        evo_client, config["location_idx"], logger
+    )
     persist_token_cache(evo_client, logger)
 
     parsed_influx = urlparse(config["influx_url"])
@@ -589,6 +618,10 @@ def main() -> None:
             logger.error("Failed to create InfluxDB client: %s", exc)
 
     points = build_points(temperatures, installation, logger)
+
+    if rate_limited:
+        logger.warning("Skipping write due to Evohome API rate limiting")
+        sys.exit(1)
 
     if not influx_client:
         logger.error("InfluxDB client unavailable; caching %d records", len(points))

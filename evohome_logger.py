@@ -58,6 +58,7 @@ def setup_logger() -> logging.Logger:
         handler.setFormatter(formatter)
         logger.addHandler(handler)
     logger.propagate = False
+    logger.debug("Logger initialized at level %s", logging.getLevelName(logger.level))
     return logger
 
 
@@ -456,36 +457,25 @@ def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging
             logger.debug("Unable to log installation payload details: %s", exc)
 
     def fetch_installation() -> Dict:
-        try:
-            full_inst = getattr(client, "full_installation", None)
-            if callable(full_inst):
-                payload = full_inst()
+        candidates = [
+            ("full_installation", True),
+            ("installation_info", True),
+            ("installation", True),
+            ("installation", False),
+        ]
+        for name, callable_only in candidates:
+            method = getattr(client, name, None)
+            if callable_only and not callable(method):
+                logger.debug("%s not callable or missing", name)
+                continue
+            try:
+                payload = method() if callable_only else method
                 log_installation_debug(payload)
-                return payload
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("full_installation failed: %s", exc)
-        try:
-            inst_call = getattr(client, "installation_info", None)
-            if callable(inst_call):
-                payload = inst_call()
-                log_installation_debug(payload)
-                return payload
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("installation_info failed: %s", exc)
-        try:
-            inst_call = getattr(client, "installation", None)
-            if callable(inst_call):
-                payload = inst_call()
-                log_installation_debug(payload)
-                return payload
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("callable installation failed: %s", exc)
-        try:
-            payload = getattr(client, "installation", {})
-            log_installation_debug(payload)
-            return payload
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("attribute installation failed: %s", exc)
+                if payload:
+                    logger.debug("Using installation payload from %s", name)
+                    return payload
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("%s failed: %s", name, exc)
         return {}
 
     installation_data = fetch_installation()
@@ -555,6 +545,7 @@ def check_connectivity(config: Dict, logger: logging.Logger) -> bool:
 def main() -> None:
     logger = setup_logger()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    logger.debug("DATA_DIR resolved to %s", DATA_DIR)
 
     args = parse_args()
     config = get_config(logger)

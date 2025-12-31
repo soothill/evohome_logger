@@ -52,7 +52,7 @@ test-connect: build
 	$(PODMAN) run $(PODMAN_RUN_FLAGS) --user $(PODMAN_USER) --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG) --check
 
 logs:
-	$(PODMAN) logs -f $(CONTAINER_NAME)
+	$(PODMAN) logs -f $(CONTAINER_NAME) || { echo "No running container named $(CONTAINER_NAME)"; exit 0; }
 
 stop:
 	-$(PODMAN) stop $(CONTAINER_NAME)

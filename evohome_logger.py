@@ -253,30 +253,45 @@ def build_evo_client(config: Dict, logger: logging.Logger):
         preferred_classes.append(("v2", EvohomeClientV2))
     preferred_classes.append(("v1", EvohomeClient))
 
+    def prepare_token_kwargs(params, tokens_in, label: str) -> Dict:
+        token_kwargs: Dict = {}
+        if not tokens_in:
+            return token_kwargs
+        for key in [
+            "access_token",
+            "refresh_token",
+            "access_token_expires",
+            "token_expires",
+            "token_expiration",
+            "tokens",
+            "session_id",
+            "user_data",
+        ]:
+            if key in params and key in tokens_in:
+                token_kwargs[key] = tokens_in[key]
+
+        # Adjust types for v2 access_token_expires
+        if "access_token_expires" in token_kwargs:
+            val = token_kwargs["access_token_expires"]
+            if isinstance(val, (int, float, str)):
+                try:
+                    token_kwargs["access_token_expires"] = datetime.fromtimestamp(float(val))
+                except Exception:  # noqa: BLE001
+                    logger.debug("Could not coerce access_token_expires for %s client", label)
+            elif not isinstance(val, datetime):
+                token_kwargs["access_token_expires"] = datetime.now()
+
+        return token_kwargs
+
     for label, cls in preferred_classes:
         base_kwargs: Dict = {}
-        token_kwargs: Dict = {}
         try:
             import inspect
 
             params = inspect.signature(cls).parameters
             if "debug" in params:
                 base_kwargs["debug"] = False
-            if tokens:
-                for key in [
-                    "access_token",
-                    "refresh_token",
-                    "access_token_expires",
-                    "token_expires",
-                    "token_expiration",
-                    "tokens",
-                    "session_id",
-                    "user_data",
-                ]:
-                    if key in params and key in tokens:
-                        token_kwargs[key] = tokens[key]
-                if "tokens" in params and "tokens" not in token_kwargs and tokens:
-                    token_kwargs["tokens"] = tokens
+            token_kwargs = prepare_token_kwargs(params, tokens, label)
             if token_kwargs:
                 try:
                     client = cls(config["username"], config["password"], **base_kwargs, **token_kwargs)

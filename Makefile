@@ -12,6 +12,7 @@ HOST_DATA_DIR ?= $(CONFIG_HOST_DATA_DIR)
 endif
 
 VOLUME_FLAGS ?= :U
+PODMAN_RUN_FLAGS ?= --userns=keep-id
 
 CONTAINER_NAME ?= evohome-logger
 
@@ -39,17 +40,17 @@ config:
 run-once: build
 	mkdir -p $(HOST_DATA_DIR)
 	chmod 0777 $(HOST_DATA_DIR)
-	$(PODMAN) run --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG)
+	$(PODMAN) run $(PODMAN_RUN_FLAGS) --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG)
 
 run-detached: build
 	mkdir -p $(HOST_DATA_DIR)
 	chmod 0777 $(HOST_DATA_DIR)
-	$(PODMAN) run --replace -d --name $(CONTAINER_NAME) --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG)
+	$(PODMAN) run $(PODMAN_RUN_FLAGS) --replace -d --name $(CONTAINER_NAME) --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG)
 
 test-connect: build
 	mkdir -p $(HOST_DATA_DIR)
 	chmod 0777 $(HOST_DATA_DIR)
-	$(PODMAN) run --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG) --check
+	$(PODMAN) run $(PODMAN_RUN_FLAGS) --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG) --check
 
 logs:
 	$(PODMAN) logs -f $(CONTAINER_NAME)

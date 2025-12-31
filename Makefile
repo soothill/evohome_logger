@@ -13,6 +13,8 @@ endif
 
 VOLUME_FLAGS ?= :U
 PODMAN_RUN_FLAGS ?= --userns=keep-id
+# Run as host user to avoid permission issues on bind mounts
+PODMAN_USER ?= $(shell id -u):$(shell id -g)
 
 CONTAINER_NAME ?= evohome-logger
 
@@ -40,17 +42,17 @@ config:
 run-once: build
 	mkdir -p $(HOST_DATA_DIR)
 	-chmod 0777 $(HOST_DATA_DIR)
-	$(PODMAN) run $(PODMAN_RUN_FLAGS) --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG)
+	$(PODMAN) run $(PODMAN_RUN_FLAGS) --user $(PODMAN_USER) --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG)
 
 run-detached: build
 	mkdir -p $(HOST_DATA_DIR)
 	-chmod 0777 $(HOST_DATA_DIR)
-	$(PODMAN) run $(PODMAN_RUN_FLAGS) --replace -d --name $(CONTAINER_NAME) --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG)
+	$(PODMAN) run $(PODMAN_RUN_FLAGS) --user $(PODMAN_USER) --replace -d --name $(CONTAINER_NAME) --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG)
 
 test-connect: build
 	mkdir -p $(HOST_DATA_DIR)
 	-chmod 0777 $(HOST_DATA_DIR)
-	$(PODMAN) run $(PODMAN_RUN_FLAGS) --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG) --check
+	$(PODMAN) run $(PODMAN_RUN_FLAGS) --user $(PODMAN_USER) --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG) --check
 
 logs:
 	$(PODMAN) logs -f $(CONTAINER_NAME)

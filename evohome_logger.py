@@ -6,6 +6,7 @@ import logging.handlers
 import os
 import socket
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -18,6 +19,7 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 IP_CACHE_FILE = DATA_DIR / "influx_ip_cache.json"
 OFFLINE_BUFFER_FILE = DATA_DIR / "offline_buffer.json"
+TOKEN_CACHE_FILE = DATA_DIR / "evohome_token.json"
 DEFAULT_TIMEOUT_MS = int(os.environ.get("HTTP_TIMEOUT_MS", "10000"))
 
 
@@ -70,6 +72,73 @@ def try_write_json(path: Path, payload: Dict, logger: logging.Logger) -> bool:
     except OSError as exc:  # noqa: BLE001
         logger.warning("Failed to persist %s: %s", path, exc)
         return False
+
+
+def load_token_cache(logger: logging.Logger) -> Optional[Dict]:
+    data = load_json(TOKEN_CACHE_FILE)
+    if not data:
+        return None
+    expires_at = data.get("expires_at")
+    if expires_at:
+        try:
+            if time.time() > float(expires_at) - 60:  # refresh 1 minute early
+                logger.info("Cached Evohome token expired or near expiry; ignoring cached token")
+                return None
+        except (TypeError, ValueError):
+            pass
+    return data
+
+
+def normalize_expiry(value) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        if isinstance(value, str):
+            return float(value)
+    except ValueError:
+        return None
+    try:
+        if isinstance(value, datetime):
+            return value.timestamp()
+    except Exception:
+        return None
+    return None
+
+
+def persist_token_cache(client: "EvohomeClient", logger: logging.Logger) -> None:
+    token_payload: Dict = {}
+    candidates = [
+        "access_token",
+        "refresh_token",
+        "access_token_expires",
+        "token_expires",
+        "token_expiration",
+        "session_id",
+        "tokens",
+    ]
+    for key in candidates:
+        if hasattr(client, key):
+            token_payload[key] = getattr(client, key)
+
+    if hasattr(client, "tokens") and isinstance(getattr(client, "tokens"), dict):
+        token_payload.update(getattr(client, "tokens"))
+
+    expires_source = (
+        token_payload.get("access_token_expires")
+        or token_payload.get("token_expires")
+        or token_payload.get("token_expiration")
+        or token_payload.get("expires_at")
+    )
+    expires_at = normalize_expiry(expires_source)
+    if expires_at:
+        token_payload["expires_at"] = expires_at
+
+    if not token_payload:
+        return
+
+    try_write_json(TOKEN_CACHE_FILE, token_payload, logger)
 
 
 def load_json(path: Path) -> Optional[Dict]:
@@ -140,6 +209,39 @@ def get_config(logger: logging.Logger) -> Dict:
         "verify_tls": os.environ.get("INFLUX_VERIFY_TLS", "true").lower() != "false",
         "location_idx": int(os.environ.get("EVOHOME_LOCATION_INDEX", "0")),
     }
+
+
+def build_evo_client(config: Dict, logger: logging.Logger) -> EvohomeClient:
+    tokens = load_token_cache(logger)
+    client = None
+
+    base_kwargs: Dict = {}
+    try:
+        import inspect
+
+        params = inspect.signature(EvohomeClient).parameters
+        if "debug" in params:
+            base_kwargs["debug"] = False
+        token_kwargs = {}
+        if tokens:
+            for key in ["access_token", "refresh_token", "access_token_expires", "token_expires", "token_expiration", "tokens", "session_id"]:
+                if key in params and key in tokens:
+                    token_kwargs[key] = tokens[key]
+            if "tokens" in params and "tokens" not in token_kwargs and tokens:
+                token_kwargs["tokens"] = tokens
+        if token_kwargs:
+            try:
+                client = EvohomeClient(config["username"], config["password"], **base_kwargs, **token_kwargs)
+                logger.info("Initialized Evohome client with cached token data")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Failed to initialize Evohome client with cached tokens: %s", exc)
+        if not client:
+            client = EvohomeClient(config["username"], config["password"], **base_kwargs)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to create Evohome client: %s", exc)
+        raise
+
+    return client
 
 
 def create_influx_client(url: str, token: str, org: str, verify_tls: bool, host_header: Optional[str]) -> InfluxDBClient:
@@ -380,8 +482,9 @@ def check_connectivity(config: Dict, logger: logging.Logger) -> bool:
     influx_ok = False
 
     try:
-        evo_client = EvohomeClient(config["username"], config["password"], debug=False)
+        evo_client = build_evo_client(config, logger)
         evo_client.temperatures(force_refresh=True)
+        persist_token_cache(evo_client, logger)
         evo_ok = True
         logger.info("Evohome connectivity: OK")
     except Exception as exc:  # noqa: BLE001
@@ -432,12 +535,12 @@ def main() -> None:
         sys.exit(0 if success else 1)
 
     try:
-        evo_client = EvohomeClient(config["username"], config["password"], debug=False)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to authenticate with Evohome: %s", exc)
+        evo_client = build_evo_client(config, logger)
+    except Exception:
         sys.exit(1)
 
     temperatures, installation = fetch_evohome_data(evo_client, config["location_idx"], logger)
+    persist_token_cache(evo_client, logger)
 
     parsed_influx = urlparse(config["influx_url"])
     resolved_ip, from_cache = resolve_influx_ip(parsed_influx.hostname or "", logger)

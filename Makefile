@@ -11,7 +11,7 @@ else
 HOST_DATA_DIR ?= $(CONFIG_HOST_DATA_DIR)
 endif
 
-VOLUME_FLAGS ?= :U
+VOLUME_FLAGS ?= :U,Z
 PODMAN_RUN_FLAGS ?= --userns=keep-id
 # Run as host user to avoid permission issues on bind mounts
 PODMAN_USER ?= $(shell id -u):$(shell id -g)

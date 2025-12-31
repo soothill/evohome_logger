@@ -40,7 +40,7 @@ Provide these environment variables:
 Use `config.env.example` as a template. `make config` copies it to `config.env` (ignored by git) so secrets stay local.
 
 ## Podman workflows (MicroOS-friendly)
-Set `HOST_DATA_DIR` in `config.env` to control the host path bound to `/data` in the container. If omitted, the Makefile falls back to `$HOME/.local/share/evohome-logger`. Only set `DATA_DIR` if you need a different path inside the container—otherwise leave it as `/data` to match the volume mount. The Makefile ensures `HOST_DATA_DIR` exists and is writable (best-effort `chmod 0777`); tighten permissions manually if you prefer. Podman runs with `--userns=keep-id` and `--user $(id -u):$(id -g)` by default, and uses `VOLUME_FLAGS` (default `:U`) to remap permissions; add `:Z` if SELinux is enforcing (e.g., `VOLUME_FLAGS=:U,Z`). Override `PODMAN_USER` in the Makefile or environment if you need a different UID:GID inside the container.
+Set `HOST_DATA_DIR` in `config.env` to control the host path bound to `/data` in the container. If omitted, the Makefile falls back to `$HOME/.local/share/evohome-logger`. Only set `DATA_DIR` if you need a different path inside the container—otherwise leave it as `/data` to match the volume mount. The Makefile ensures `HOST_DATA_DIR` exists (best-effort `chmod 0777`). Podman runs with `--userns=keep-id`, `--user $(id -u):$(id -g)`, and uses `VOLUME_FLAGS` (default `:U,Z` for rootless + SELinux contexts). Override `VOLUME_FLAGS` or `PODMAN_USER` if your environment needs different settings.
 0) Help/usage: run `make` with no args to see available targets.  
 1) Prepare config: `make config` then edit `config.env` with your credentials and endpoints.  
 2) Build image: `make build` (podman build).  
@@ -113,6 +113,7 @@ Swap `emptyDir` for a `PersistentVolume` if you want offline buffers and DNS cac
   - `evohome_dhw`: tags `system_id`; fields `temperature`, `status`, `mode`, `is_available`.
 - **Offline buffer:** `${DATA_DIR}/offline_buffer.json` stores pending line protocol when writes fail; flushed on the next successful write.
 - **DNS/IP cache:** `${DATA_DIR}/influx_ip_cache.json` keeps the last-resolved IP for the InfluxDB host, reused when DNS is unavailable.
+- **Token cache:** `${DATA_DIR}/evohome_token.json` stores Evohome tokens and expiry (best effort). Cached tokens are reused until near expiry.
 
 ## Logging and troubleshooting
 - Logs go to syslog if `/dev/log` exists; otherwise to stdout/stderr (visible via Podman/Kubernetes logs).

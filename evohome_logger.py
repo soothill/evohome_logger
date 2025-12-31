@@ -12,7 +12,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from evohomeclient import EvohomeClient
+from evohomeclient import EvohomeClient  # v1
+try:
+    from evohomeclient2 import EvohomeClient as EvohomeClientV2  # type: ignore
+except Exception:  # noqa: BLE001
+    EvohomeClientV2 = None
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 import requests
@@ -228,37 +232,54 @@ def get_config(logger: logging.Logger) -> Dict:
     }
 
 
-def build_evo_client(config: Dict, logger: logging.Logger) -> EvohomeClient:
+def build_evo_client(config: Dict, logger: logging.Logger):
     tokens = load_token_cache(logger)
     client = None
+    preferred_classes = []
+    if EvohomeClientV2:
+        preferred_classes.append(("v2", EvohomeClientV2))
+    preferred_classes.append(("v1", EvohomeClient))
 
-    base_kwargs: Dict = {}
-    try:
-        import inspect
+    for label, cls in preferred_classes:
+        base_kwargs: Dict = {}
+        token_kwargs: Dict = {}
+        try:
+            import inspect
 
-        params = inspect.signature(EvohomeClient).parameters
-        if "debug" in params:
-            base_kwargs["debug"] = False
-        token_kwargs = {}
-        if tokens:
-            for key in ["access_token", "refresh_token", "access_token_expires", "token_expires", "token_expiration", "tokens", "session_id"]:
-                if key in params and key in tokens:
-                    token_kwargs[key] = tokens[key]
-            if "tokens" in params and "tokens" not in token_kwargs and tokens:
-                token_kwargs["tokens"] = tokens
-        if token_kwargs:
-            try:
-                client = EvohomeClient(config["username"], config["password"], **base_kwargs, **token_kwargs)
-                logger.info("Initialized Evohome client with cached token data")
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Failed to initialize Evohome client with cached tokens: %s", exc)
-        if not client:
-            client = EvohomeClient(config["username"], config["password"], **base_kwargs)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to create Evohome client: %s", exc)
-        raise
+            params = inspect.signature(cls).parameters
+            if "debug" in params:
+                base_kwargs["debug"] = False
+            if tokens:
+                for key in [
+                    "access_token",
+                    "refresh_token",
+                    "access_token_expires",
+                    "token_expires",
+                    "token_expiration",
+                    "tokens",
+                    "session_id",
+                    "user_data",
+                ]:
+                    if key in params and key in tokens:
+                        token_kwargs[key] = tokens[key]
+                if "tokens" in params and "tokens" not in token_kwargs and tokens:
+                    token_kwargs["tokens"] = tokens
+            if token_kwargs:
+                try:
+                    client = cls(config["username"], config["password"], **base_kwargs, **token_kwargs)
+                    logger.info("Initialized Evohome %s client with cached token data", label)
+                    return client
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Failed to initialize Evohome %s client with cached tokens: %s", label, exc)
+            client = cls(config["username"], config["password"], **base_kwargs)
+            logger.info("Initialized Evohome %s client", label)
+            return client
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to create Evohome %s client: %s", label, exc)
+            continue
 
-    return client
+    logger.error("Unable to create Evohome client")
+    raise RuntimeError("Evohome client creation failed")
 
 
 def create_influx_client(url: str, token: str, org: str, verify_tls: bool, host_header: Optional[str]) -> InfluxDBClient:
@@ -335,8 +356,22 @@ def build_points(temperatures: List[Dict], installation: Dict, logger: logging.L
     timestamp = datetime.now(timezone.utc)
     zone_meta = extract_zone_meta(installation)
     points: List[Point] = []
+    dhw_points: List[Dict] = extract_dhw(installation)
 
     for zone in temperatures or []:
+        thermostat_type = str(zone.get("thermostat") or zone.get("thermostatModelType") or "").upper()
+        if thermostat_type == "DOMESTIC_HOT_WATER":
+            dhw_points.append(
+                {
+                    "system_id": None,
+                    "status": zone.get("status") or zone.get("mode"),
+                    "temperature": safe_float(zone.get("temp")),
+                    "is_available": True,
+                    "mode": zone.get("mode"),
+                }
+            )
+            continue
+
         zone_id = str(zone.get("id") or zone.get("zoneId") or zone.get("zoneID") or zone.get("name") or "unknown")
         meta = zone_meta.get(zone_id, {})
         point = Point("evohome_zone").tag("zone_id", zone_id)
@@ -378,18 +413,21 @@ def build_points(temperatures: List[Dict], installation: Dict, logger: logging.L
         if point.to_line_protocol():
             points.append(point)
 
-    for dhw in extract_dhw(installation):
-        point = Point("evohome_dhw").tag("system_id", str(dhw.get("system_id"))).time(timestamp)
-        if dhw.get("status"):
-            point = point.field("status", str(dhw.get("status")))
+    for dhw in dhw_points:
+        point = Point("evohome_dhw")
+        if dhw.get("system_id"):
+            point = point.tag("system_id", str(dhw.get("system_id")))
         if dhw.get("mode"):
             point = point.field("mode", str(dhw.get("mode")))
+        if dhw.get("status"):
+            point = point.field("status", str(dhw.get("status")))
         temp_value = safe_float(dhw.get("temperature"))
         if temp_value is not None:
             point = point.field("temperature", temp_value)
         availability = dhw.get("is_available")
         if availability is not None:
             point = point.field("is_available", bool(availability))
+        point = point.time(timestamp)
         if point.to_line_protocol():
             points.append(point)
 
@@ -445,8 +483,14 @@ def write_points(records: List[Point], influx: InfluxDBClient, bucket: str, org:
 
 
 def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging.Logger) -> Tuple[List[Dict], Dict, bool, bool]:
+    def fetch_temperatures():
+        try:
+            return client.temperatures(force_refresh=True)  # type: ignore[arg-type]
+        except TypeError:
+            return client.temperatures()
+
     try:
-        temperatures = client.temperatures(force_refresh=True)
+        temperatures = list(fetch_temperatures())
         rate_limited = False
     except Exception as exc:  # noqa: BLE001
         rate_limited = is_rate_limit_error(exc)
@@ -531,7 +575,10 @@ def check_connectivity(config: Dict, logger: logging.Logger) -> bool:
 
     try:
         evo_client = build_evo_client(config, logger)
-        evo_client.temperatures(force_refresh=True)
+        try:
+            evo_client.temperatures(force_refresh=True)  # type: ignore[arg-type]
+        except TypeError:
+            evo_client.temperatures()
         persist_token_cache(evo_client, logger)
         evo_ok = True
         logger.info("Evohome connectivity: OK")

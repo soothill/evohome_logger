@@ -432,7 +432,7 @@ def write_points(records: List[Point], influx: InfluxDBClient, bucket: str, org:
         return False
 
 
-def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging.Logger) -> Tuple[List[Dict], Dict]:
+def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging.Logger) -> Tuple[List[Dict], Dict, bool]:
     try:
         temperatures = client.temperatures(force_refresh=True)
     except Exception as exc:  # noqa: BLE001
@@ -456,7 +456,8 @@ def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging
         except Exception as exc:  # noqa: BLE001
             logger.debug("Unable to log installation payload details: %s", exc)
 
-    def fetch_installation() -> Dict:
+    def fetch_installation() -> Tuple[Dict, bool]:
+        attempted = False
         candidates = [
             ("full_installation", True),
             ("installation_info", True),
@@ -469,16 +470,17 @@ def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging
                 logger.debug("%s not callable or missing", name)
                 continue
             try:
+                attempted = True
                 payload = method() if callable_only else method
                 log_installation_debug(payload)
                 if payload:
                     logger.debug("Using installation payload from %s", name)
-                    return payload
+                    return payload, attempted
             except Exception as exc:  # noqa: BLE001
                 logger.debug("%s failed: %s", name, exc)
-        return {}
+        return {}, attempted
 
-    installation_data = fetch_installation()
+    installation_data, attempted_install = fetch_installation()
     installation = {}
     if isinstance(installation_data, list) and installation_data:
         try:
@@ -491,9 +493,12 @@ def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging
         logger.warning("Unexpected installation payload type: %s", type(installation_data))
 
     if not installation:
-        logger.warning("Proceeding without installation details; some tags may be missing")
+        if attempted_install:
+            logger.warning("Proceeding without installation details; some tags may be missing")
+        else:
+            logger.info("Evohome client does not expose installation metadata; continuing without those tags")
 
-    return temperatures, installation if installation else {}
+    return temperatures, installation if installation else {}, attempted_install
 
 
 def check_connectivity(config: Dict, logger: logging.Logger) -> bool:
@@ -559,7 +564,7 @@ def main() -> None:
     except Exception:
         sys.exit(1)
 
-    temperatures, installation = fetch_evohome_data(evo_client, config["location_idx"], logger)
+    temperatures, installation, _attempted_install = fetch_evohome_data(evo_client, config["location_idx"], logger)
     persist_token_cache(evo_client, logger)
 
     parsed_influx = urlparse(config["influx_url"])

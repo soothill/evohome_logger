@@ -26,6 +26,7 @@ Containerized Honeywell Evohome telemetry collector for InfluxDB. Designed for P
 
 ## Configuration
 Provide these environment variables:
+- `HOST_DATA_DIR`: Host path to bind-mount for cache/buffer persistence (configured in `config.env`; default resolved in Makefile to `$HOME/.local/share/evohome-logger` if unspecified).
 - `EVOHOME_USERNAME` / `EVOHOME_PASSWORD`: Evohome account credentials.
 - `EVOHOME_LOCATION_INDEX` (optional): Installation index when multiple exist. Default: `0`.
 - `INFLUX_URL`: Base InfluxDB URL (e.g., `http://influxdb:8086`).
@@ -39,11 +40,11 @@ Provide these environment variables:
 Use `config.env.example` as a template. `make config` copies it to `config.env` (ignored by git) so secrets stay local.
 
 ## Podman workflows (MicroOS-friendly)
-By default the Makefile mounts a rootless-friendly host path (`$HOME/.local/share/evohome-logger`) to `/data` in the container. Override `DATA_DIR=/your/path` when invoking `make` if you prefer another host path (e.g., `/var/lib/evohome-logger` when running with elevated permissions).
+Set `HOST_DATA_DIR` in `config.env` to control the host path bound to `/data` in the container. If omitted, the Makefile falls back to `$HOME/.local/share/evohome-logger`. Only set `DATA_DIR` if you need a different path inside the container—otherwise leave it as `/data` to match the volume mount.
 0) Help/usage: run `make` with no args to see available targets.  
 1) Prepare config: `make config` then edit `config.env` with your credentials and endpoints.  
 2) Build image: `make build` (podman build).  
-3) Run once (good for cron/timers): `make run-once` (uses `config.env`, mounts `DATA_DIR` to `/data`).  
+3) Run once (good for cron/timers): `make run-once` (uses `config.env`, mounts `HOST_DATA_DIR` to `/data`).  
 4) Run detached for log inspection: `make run-detached`, view logs with `make logs`, stop/remove with `make stop` / `make rm`.  
 5) Connectivity-only test (no writes): `make test-connect` (runs container with `--check`, exercises Evohome login + InfluxDB health).
 
@@ -51,7 +52,7 @@ By default the Makefile mounts a rootless-friendly host path (`$HOME/.local/shar
 
 ### Cron example with Podman (every 5 minutes)
 ```cron
-*/5 * * * * cd /path/to/evohome_logger && DATA_DIR=$HOME/.local/share/evohome-logger make run-once >> /var/log/evohome-logger.log 2>&1
+*/5 * * * * cd /path/to/evohome_logger && make run-once >> /var/log/evohome-logger.log 2>&1
 ```
 The cron-driven container is short-lived; persisted `/data` ensures DNS cache and offline payloads survive between runs.
 

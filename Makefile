@@ -20,7 +20,7 @@ CONTAINER_NAME ?= evohome-logger
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build config run-once run-detached logs stop rm test-connect
+.PHONY: help build config run-once run-detached logs stop rm test-connect install-timer
 
 help:
 	@echo "Evohome logger (Podman) targets:"
@@ -32,6 +32,7 @@ help:
 	@echo "  make stop          - Stop detached container (if running)"
 	@echo "  make rm            - Remove stopped container"
 	@echo "  make test-connect  - Connectivity check only (Evohome + InfluxDB, no writes)"
+	@echo "  make install-timer - Install + enable systemd timer (root privileges required)"
 
 build:
 	$(PODMAN) build -t $(IMAGE):$(TAG) .
@@ -59,3 +60,11 @@ stop:
 
 rm:
 	-$(PODMAN) rm $(CONTAINER_NAME)
+
+# Install and enable the systemd timer for 5-minute runs.
+# Requires sudo/root and systemd on the host.
+install-timer:
+	sudo install -D -m0644 systemd/evohome-logger.service /etc/systemd/system/evohome-logger.service
+	sudo install -D -m0644 systemd/evohome-logger.timer /etc/systemd/system/evohome-logger.timer
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now evohome-logger.timer

@@ -132,3 +132,13 @@ Swap `emptyDir` for a `PersistentVolume` if you want offline buffers and DNS cac
 
 ---
 Copyright (c) 2025 Darren Soothill (darren [at] soothill [dot] com). All rights reserved.
+
+## systemd timer (runs every 5 minutes)
+Install the provided units as root (or place them in `~/.config/systemd/user` for user services):
+```bash
+sudo cp systemd/evohome-logger.service /etc/systemd/system/
+sudo cp systemd/evohome-logger.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now evohome-logger.timer
+```
+You can also run `make install-timer` (requires sudo/root) to perform the same steps. The service runs `make run-once` from `/workspace` each time the timer fires. Adjust `WorkingDirectory` or `ExecStart` in the service unit if your clone lives elsewhere or you need a different invocation.

@@ -1,0 +1,13 @@
+[Unit]
+Description=Evohome logger (Podman) run-once
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/workspace
+Environment="PATH=/usr/local/bin:/usr/bin"
+ExecStart=/usr/bin/make run-once
+
+[Install]
+WantedBy=multi-user.target

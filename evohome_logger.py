@@ -58,7 +58,10 @@ def setup_logger() -> logging.Logger:
             pass
 
     handlers.append(logging.StreamHandler(sys.stdout))
-    formatter = logging.Formatter("evohome_logger: %(levelname)s %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s %(name)s: %(levelname)s %(message)s", "%Y-%m-%dT%H:%M:%SZ"
+    )
+    formatter.converter = time.gmtime  # UTC timestamps for consistency in logs
     for handler in handlers:
         handler.setFormatter(formatter)
         logger.addHandler(handler)

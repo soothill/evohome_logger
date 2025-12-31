@@ -40,7 +40,7 @@ Provide these environment variables:
 Use `config.env.example` as a template. `make config` copies it to `config.env` (ignored by git) so secrets stay local.
 
 ## Podman workflows (MicroOS-friendly)
-Set `HOST_DATA_DIR` in `config.env` to control the host path bound to `/data` in the container. If omitted, the Makefile falls back to `$HOME/.local/share/evohome-logger`. Only set `DATA_DIR` if you need a different path inside the container—otherwise leave it as `/data` to match the volume mount. The Makefile ensures `HOST_DATA_DIR` exists and is writable (`chmod 0777`); tighten permissions manually if you prefer and run the container with an appropriate user mapping.
+Set `HOST_DATA_DIR` in `config.env` to control the host path bound to `/data` in the container. If omitted, the Makefile falls back to `$HOME/.local/share/evohome-logger`. Only set `DATA_DIR` if you need a different path inside the container—otherwise leave it as `/data` to match the volume mount. The Makefile ensures `HOST_DATA_DIR` exists and is writable (`chmod 0777`); tighten permissions manually if you prefer and run the container with an appropriate user mapping. It also uses `VOLUME_FLAGS` (default `:U`) on the bind mount to remap permissions for rootless Podman; add `:Z` if SELinux is enforcing (e.g., `VOLUME_FLAGS=:U,Z`).
 0) Help/usage: run `make` with no args to see available targets.  
 1) Prepare config: `make config` then edit `config.env` with your credentials and endpoints.  
 2) Build image: `make build` (podman build).  

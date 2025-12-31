@@ -11,6 +11,8 @@ else
 HOST_DATA_DIR ?= $(CONFIG_HOST_DATA_DIR)
 endif
 
+VOLUME_FLAGS ?= :U
+
 CONTAINER_NAME ?= evohome-logger
 
 .DEFAULT_GOAL := help
@@ -37,17 +39,17 @@ config:
 run-once: build
 	mkdir -p $(HOST_DATA_DIR)
 	chmod 0777 $(HOST_DATA_DIR)
-	$(PODMAN) run --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data $(IMAGE):$(TAG)
+	$(PODMAN) run --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG)
 
 run-detached: build
 	mkdir -p $(HOST_DATA_DIR)
 	chmod 0777 $(HOST_DATA_DIR)
-	$(PODMAN) run --replace -d --name $(CONTAINER_NAME) --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data $(IMAGE):$(TAG)
+	$(PODMAN) run --replace -d --name $(CONTAINER_NAME) --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG)
 
 test-connect: build
 	mkdir -p $(HOST_DATA_DIR)
 	chmod 0777 $(HOST_DATA_DIR)
-	$(PODMAN) run --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data $(IMAGE):$(TAG) --check
+	$(PODMAN) run --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data$(VOLUME_FLAGS) $(IMAGE):$(TAG) --check
 
 logs:
 	$(PODMAN) logs -f $(CONTAINER_NAME)

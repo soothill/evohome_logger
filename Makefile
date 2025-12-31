@@ -3,7 +3,8 @@ IMAGE ?= evohome-logger
 TAG ?= latest
 CONFIG_FILE ?= config.env
 # Rootless-friendly default; override via HOST_DATA_DIR in the config file or on the command line
-DEFAULT_HOST_DATA_DIR := $(HOME)/.local/share/evohome-logger
+# If HOME is unset (e.g., under systemd), fall back to /var/lib/evohome-logger
+DEFAULT_HOST_DATA_DIR := $(if $(strip $(HOME)),$(HOME)/.local/share/evohome-logger,/var/lib/evohome-logger)
 CONFIG_HOST_DATA_DIR := $(shell if [ -f $(CONFIG_FILE) ]; then sed -n 's/^HOST_DATA_DIR=//p' $(CONFIG_FILE) | tail -n1; fi)
 ifeq ($(strip $(CONFIG_HOST_DATA_DIR)),)
 HOST_DATA_DIR ?= $(DEFAULT_HOST_DATA_DIR)

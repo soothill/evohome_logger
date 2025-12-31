@@ -145,5 +145,7 @@ You can also run `make install-timer` (requires sudo/root) to perform the same s
 To override the repo path without editing the unit, create `/etc/default/evohome-logger` with:
 ```
 REPO_DIR=/home/youruser/evohome_logger
+# Optional: HOST_DATA_DIR=/var/lib/evohome-logger
 ```
 and then rerun `make install-timer` (or copy the unit) followed by `sudo systemctl daemon-reload` and restart the timer.
+If `HOME` is not set (common in systemd services), the Makefile now defaults `HOST_DATA_DIR` to `/var/lib/evohome-logger` to avoid write errors under `/`.

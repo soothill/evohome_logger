@@ -5,9 +5,10 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/workspace
+EnvironmentFile=-/etc/default/evohome-logger
 Environment="PATH=/usr/local/bin:/usr/bin"
-ExecStart=/usr/bin/make run-once
+Environment="REPO_DIR=/workspace"
+ExecStart=/usr/bin/env bash -lc 'cd "${REPO_DIR:-/workspace}" && exec make run-once'
 
 [Install]
 WantedBy=multi-user.target

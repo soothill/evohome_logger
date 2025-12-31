@@ -38,7 +38,11 @@ def setup_logger() -> logging.Logger:
     if logger.handlers:
         return logger
 
-    logger.setLevel(logging.INFO)
+    level_name = os.environ.get("LOG_LEVEL")
+    if not level_name and os.environ.get("DEBUG", "").lower() in {"1", "true", "yes", "on"}:
+        level_name = "DEBUG"
+    level = getattr(logging, (level_name or "INFO").upper(), logging.INFO)
+    logger.setLevel(level)
     handlers: List[logging.Handler] = []
 
     syslog_path = Path("/dev/log")
@@ -434,27 +438,52 @@ def fetch_evohome_data(client: EvohomeClient, location_idx: int, logger: logging
         logger.error("Failed to fetch temperatures: %s", exc)
         temperatures = []
 
+    def log_installation_debug(payload) -> None:
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        try:
+            if isinstance(payload, list):
+                logger.debug("Installation payload: list length=%d", len(payload))
+                if payload:
+                    sample = payload[0]
+                    if isinstance(sample, dict):
+                        logger.debug("Installation sample keys: %s", list(sample.keys()))
+            elif isinstance(payload, dict):
+                logger.debug("Installation payload: dict keys=%s", list(payload.keys()))
+            else:
+                logger.debug("Installation payload type: %s", type(payload))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Unable to log installation payload details: %s", exc)
+
     def fetch_installation() -> Dict:
         try:
             full_inst = getattr(client, "full_installation", None)
             if callable(full_inst):
-                return full_inst()
+                payload = full_inst()
+                log_installation_debug(payload)
+                return payload
         except Exception as exc:  # noqa: BLE001
             logger.debug("full_installation failed: %s", exc)
         try:
             inst_call = getattr(client, "installation_info", None)
             if callable(inst_call):
-                return inst_call()
+                payload = inst_call()
+                log_installation_debug(payload)
+                return payload
         except Exception as exc:  # noqa: BLE001
             logger.debug("installation_info failed: %s", exc)
         try:
             inst_call = getattr(client, "installation", None)
             if callable(inst_call):
-                return inst_call()
+                payload = inst_call()
+                log_installation_debug(payload)
+                return payload
         except Exception as exc:  # noqa: BLE001
             logger.debug("callable installation failed: %s", exc)
         try:
-            return getattr(client, "installation", {})
+            payload = getattr(client, "installation", {})
+            log_installation_debug(payload)
+            return payload
         except Exception as exc:  # noqa: BLE001
             logger.debug("attribute installation failed: %s", exc)
         return {}

@@ -36,14 +36,17 @@ config:
 
 run-once: build
 	mkdir -p $(HOST_DATA_DIR)
+	chmod 0777 $(HOST_DATA_DIR)
 	$(PODMAN) run --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data $(IMAGE):$(TAG)
 
 run-detached: build
 	mkdir -p $(HOST_DATA_DIR)
+	chmod 0777 $(HOST_DATA_DIR)
 	$(PODMAN) run --replace -d --name $(CONTAINER_NAME) --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data $(IMAGE):$(TAG)
 
 test-connect: build
 	mkdir -p $(HOST_DATA_DIR)
+	chmod 0777 $(HOST_DATA_DIR)
 	$(PODMAN) run --rm --env-file $(CONFIG_FILE) -v $(HOST_DATA_DIR):/data $(IMAGE):$(TAG) --check
 
 logs:

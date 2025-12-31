@@ -39,10 +39,11 @@ Provide these environment variables:
 Use `config.env.example` as a template. `make config` copies it to `config.env` (ignored by git) so secrets stay local.
 
 ## Podman workflows (MicroOS-friendly)
+By default the Makefile mounts a rootless-friendly host path (`$HOME/.local/share/evohome-logger`) to `/data` in the container. Override `DATA_DIR=/your/path` when invoking `make` if you prefer another host path (e.g., `/var/lib/evohome-logger` when running with elevated permissions).
 0) Help/usage: run `make` with no args to see available targets.  
 1) Prepare config: `make config` then edit `config.env` with your credentials and endpoints.  
 2) Build image: `make build` (podman build).  
-3) Run once (good for cron/timers): `make run-once` (uses `config.env`, mounts `/var/lib/evohome-logger` to `/data`).  
+3) Run once (good for cron/timers): `make run-once` (uses `config.env`, mounts `DATA_DIR` to `/data`).  
 4) Run detached for log inspection: `make run-detached`, view logs with `make logs`, stop/remove with `make stop` / `make rm`.  
 5) Connectivity-only test (no writes): `make test-connect` (runs container with `--check`, exercises Evohome login + InfluxDB health).
 
@@ -50,7 +51,7 @@ Use `config.env.example` as a template. `make config` copies it to `config.env` 
 
 ### Cron example with Podman (every 5 minutes)
 ```cron
-*/5 * * * * cd /path/to/evohome_logger && make run-once >> /var/log/evohome-logger.log 2>&1
+*/5 * * * * cd /path/to/evohome_logger && DATA_DIR=$HOME/.local/share/evohome-logger make run-once >> /var/log/evohome-logger.log 2>&1
 ```
 The cron-driven container is short-lived; persisted `/data` ensures DNS cache and offline payloads survive between runs.
 

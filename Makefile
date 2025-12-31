@@ -2,7 +2,8 @@ PODMAN ?= podman
 IMAGE ?= evohome-logger
 TAG ?= latest
 CONFIG_FILE ?= config.env
-DATA_DIR ?= /var/lib/evohome-logger
+# Rootless-friendly default; override if you prefer /var/lib with sudo/root
+DATA_DIR ?= $(HOME)/.local/share/evohome-logger
 CONTAINER_NAME ?= evohome-logger
 
 .DEFAULT_GOAL := help

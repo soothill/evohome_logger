@@ -366,11 +366,13 @@ def extract_dhw(installation: Dict) -> List[Dict]:
             dhw = system.get("dhw") or {}
             if not dhw:
                 continue
-            dhw_state = dhw.get("stateStatus") or {}
+            dhw_state = dhw.get("stateStatus") or dhw.get("state") or {}
             temp_status = dhw.get("temperatureStatus") or {}
+            zone_id = dhw.get("dhwId") or dhw.get("id") or dhw.get("zoneId") or dhw.get("zoneID")
             dhw_points.append(
                 {
                     "system_id": system_id,
+                    "zone_id": str(zone_id) if zone_id else None,
                     "status": dhw_state.get("status") or dhw_state.get("mode"),
                     "temperature": safe_float(temp_status.get("temperature")),
                     "is_available": dhw_state.get("isAvailable"),
@@ -385,13 +387,17 @@ def build_points(temperatures: List[Dict], installation: Dict, logger: logging.L
     zone_meta = extract_zone_meta(installation)
     points: List[Point] = []
     dhw_points: List[Dict] = extract_dhw(installation)
+    dhw_zone_ids = {d.get("zone_id") for d in dhw_points if d.get("zone_id")}
 
     for zone in temperatures or []:
         thermostat_type = str(zone.get("thermostat") or zone.get("thermostatModelType") or "").upper()
-        if thermostat_type == "DOMESTIC_HOT_WATER":
+        zone_id = str(zone.get("id") or zone.get("zoneId") or zone.get("zoneID") or zone.get("name") or "unknown")
+
+        if thermostat_type == "DOMESTIC_HOT_WATER" or zone_id in dhw_zone_ids:
             dhw_points.append(
                 {
                     "system_id": None,
+                    "zone_id": zone_id,
                     "status": zone.get("status") or zone.get("mode"),
                     "temperature": safe_float(zone.get("temp")),
                     "is_available": True,
@@ -400,7 +406,6 @@ def build_points(temperatures: List[Dict], installation: Dict, logger: logging.L
             )
             continue
 
-        zone_id = str(zone.get("id") or zone.get("zoneId") or zone.get("zoneID") or zone.get("name") or "unknown")
         meta = zone_meta.get(zone_id, {})
         point = Point("evohome_zone").tag("zone_id", zone_id)
 
@@ -445,6 +450,8 @@ def build_points(temperatures: List[Dict], installation: Dict, logger: logging.L
         point = Point("evohome_dhw")
         if dhw.get("system_id"):
             point = point.tag("system_id", str(dhw.get("system_id")))
+        if dhw.get("zone_id"):
+            point = point.tag("zone_id", str(dhw.get("zone_id")))
         if dhw.get("mode"):
             point = point.field("mode", str(dhw.get("mode")))
         if dhw.get("status"):

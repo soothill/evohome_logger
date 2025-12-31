@@ -8,7 +8,7 @@ Type=oneshot
 EnvironmentFile=-/etc/default/evohome-logger
 Environment="PATH=/usr/local/bin:/usr/bin"
 Environment="REPO_DIR=/workspace"
-ExecStart=/usr/bin/env bash -lc "cd \"${REPO_DIR:-/workspace}\" && exec make run-once"
+ExecStart=/usr/bin/make -C ${REPO_DIR} run-once
 
 [Install]
 WantedBy=multi-user.target

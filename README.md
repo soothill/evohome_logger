@@ -141,7 +141,7 @@ sudo cp systemd/evohome-logger.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now evohome-logger.timer
 ```
-You can also run `make install-timer` (requires sudo/root) to perform the same steps. The service runs `make run-once` from `/workspace` each time the timer fires. Adjust `WorkingDirectory` or `ExecStart` in the service unit if your clone lives elsewhere or you need a different invocation.
+You can also run `make install-timer` (requires sudo/root) to perform the same steps. The service runs `make run-once` from `REPO_DIR` (default `/workspace`) each time the timer fires. Adjust `REPO_DIR` via `/etc/default/evohome-logger`.
 To override the repo path without editing the unit, create `/etc/default/evohome-logger` with:
 ```
 REPO_DIR=/home/youruser/evohome_logger
